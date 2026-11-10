@@ -7,6 +7,7 @@
 # TestFlight için gereken GitHub ayarları (Settings → Secrets and variables → Actions):
 #   Variables: APPLE_TEAM_ID, BUNDLE_ID
 #   Secrets:   ASC_KEY_ID, ASC_ISSUER_ID, ASC_PRIVATE_KEY
+# İsteğe bağlı Variable: MACOS_RUNNER (varsayılan macos-15-intel; ör. macos-15)
 name: iOS
 
 on:
@@ -26,7 +27,7 @@ concurrency:
 jobs:
   derle:
     name: Test ve derleme
-    runs-on: macos-15
+    runs-on: ${{ vars.MACOS_RUNNER || 'macos-15-intel' }}
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
@@ -58,7 +59,7 @@ jobs:
     name: TestFlight'a yükle
     needs: derle
     if: github.event_name == 'workflow_dispatch' && inputs.testflight
-    runs-on: macos-15
+    runs-on: ${{ vars.MACOS_RUNNER || 'macos-15-intel' }}
     timeout-minutes: 45
     env:
       TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
