@@ -1,29 +1,30 @@
 import Foundation
 
-/// Uygulamanın tüm kalıcı durumu. JSON olarak saklanır.
+/// Uygulamanın tüm kalıcı durumu. Cihazda JSON olarak saklanır,
+/// iCloud'a ise öğe öğe (bkz. `Senkron.swift`) eşitlenir.
 public struct AileDurumu: Codable, Hashable, Sendable {
-    public static let surum = 1
+    public static let surum = 2
 
     public var surum: Int
-    public var bebekAdi: String
+    public var ayarlar: AileAyarlari
     public var ebeveynler: [Ebeveyn]
     public var gorevTurleri: [GorevTuru]
     public var kayitlar: [GorevKaydi]
-    public var kurallar: PuanKurallari
+
+    public var bebekAdi: String { ayarlar.bebekAdi }
+    public var kurallar: PuanKurallari { ayarlar.kurallar }
 
     public init(
-        bebekAdi: String = "Bebek",
-        ebeveynler: [Ebeveyn] = EbeveynRolu.allCases.map { Ebeveyn(ad: $0.varsayilanAd, rol: $0) },
+        ayarlar: AileAyarlari = AileAyarlari(),
+        ebeveynler: [Ebeveyn] = EbeveynRolu.allCases.map(Ebeveyn.varsayilan),
         gorevTurleri: [GorevTuru] = GorevTuru.varsayilanlar,
-        kayitlar: [GorevKaydi] = [],
-        kurallar: PuanKurallari = .varsayilan
+        kayitlar: [GorevKaydi] = []
     ) {
         self.surum = AileDurumu.surum
-        self.bebekAdi = bebekAdi
+        self.ayarlar = ayarlar
         self.ebeveynler = ebeveynler
         self.gorevTurleri = gorevTurleri
-        self.kayitlar = kayitlar
-        self.kurallar = kurallar
+        self.kayitlar = kayitlar.sorted { $0.tarih > $1.tarih }
     }
 
     public func gorev(id: String) -> GorevTuru? { gorevTurleri.first { $0.id == id } }
@@ -34,6 +35,8 @@ public struct AileDurumu: Codable, Hashable, Sendable {
         case bilinmeyenEbeveyn
         case gecersizAd
     }
+
+    // MARK: - Görev kayıtları
 
     /// Bir görevin yapıldığını kaydeder ve kazanılan puanı hesaplar.
     @discardableResult
@@ -55,27 +58,41 @@ public struct AileDurumu: Codable, Hashable, Sendable {
             geceBonusu: sonuc.geceBonusu,
             not: not
         )
-        kayitlar.append(kayit)
-        kayitlar.sort { $0.tarih > $1.tarih }
+        kayitEkle(kayit)
         return kayit
+    }
+
+    mutating func kayitEkle(_ kayit: GorevKaydi) {
+        kayitlar.removeAll { $0.id == kayit.id }
+        let index = kayitlar.firstIndex { $0.tarih <= kayit.tarih } ?? kayitlar.endIndex
+        kayitlar.insert(kayit, at: index)
     }
 
     public mutating func kaydiSil(id: UUID) {
         kayitlar.removeAll { $0.id == id }
     }
 
-    public mutating func zorlukGuncelle(gorevID: String, zorluk: Int) {
-        guard let index = gorevTurleri.firstIndex(where: { $0.id == gorevID }) else { return }
-        gorevTurleri[index].zorluk = zorluk
+    public mutating func tumKayitlariSil() {
+        kayitlar.removeAll()
     }
 
-    /// Kullanıcının kendi görevini ekler. Oluşan görevin kimliğini döner.
+    // MARK: - Görev türleri
+
+    public mutating func zorlukGuncelle(gorevID: String, zorluk: Int, simdi: Date = Date()) {
+        guard let index = gorevTurleri.firstIndex(where: { $0.id == gorevID }) else { return }
+        guard gorevTurleri[index].zorluk != GorevTuru.sinirla(zorluk) else { return }
+        gorevTurleri[index].zorluk = zorluk
+        gorevTurleri[index].guncellenme = simdi
+    }
+
+    /// Kullanıcının kendi görevini ekler.
     @discardableResult
     public mutating func ozelGorevEkle(
         ad: String,
         emoji: String,
         kategori: GorevKategorisi,
-        zorluk: Int
+        zorluk: Int,
+        simdi: Date = Date()
     ) throws -> GorevTuru {
         let temizAd = ad.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !temizAd.isEmpty else { throw Hata.gecersizAd }
@@ -84,7 +101,8 @@ public struct AileDurumu: Codable, Hashable, Sendable {
             ad: temizAd,
             emoji: emoji.isEmpty ? "⭐️" : emoji,
             kategori: kategori,
-            zorluk: zorluk
+            zorluk: zorluk,
+            guncellenme: simdi
         )
         gorevTurleri.append(gorev)
         return gorev
@@ -93,6 +111,26 @@ public struct AileDurumu: Codable, Hashable, Sendable {
     /// Görevi listeden kaldırır; geçmiş kayıtlar (ve puanları) korunur.
     public mutating func gorevSil(id: String) {
         gorevTurleri.removeAll { $0.id == id }
+    }
+
+    // MARK: - Aile ve ayarlar
+
+    public mutating func ebeveynGuncelle(id: UUID, ad: String? = nil, emoji: String? = nil, simdi: Date = Date()) {
+        guard let index = ebeveynler.firstIndex(where: { $0.id == id }) else { return }
+        var ebeveyn = ebeveynler[index]
+        if let ad { ebeveyn.ad = ad }
+        if let emoji { ebeveyn.emoji = emoji }
+        guard ebeveyn != ebeveynler[index] else { return }
+        ebeveyn.guncellenme = simdi
+        ebeveynler[index] = ebeveyn
+    }
+
+    public mutating func ayarlariGuncelle(simdi: Date = Date(), _ degisiklik: (inout AileAyarlari) -> Void) {
+        var yeni = ayarlar
+        degisiklik(&yeni)
+        guard yeni != ayarlar else { return }
+        yeni.guncellenme = simdi
+        ayarlar = yeni
     }
 
     public func skorlar(donem: SkorDonemi, simdi: Date = Date(), takvim: Calendar = .current) -> [EbeveynSkoru] {
@@ -107,11 +145,8 @@ public struct AileDurumu: Codable, Hashable, Sendable {
 
     public static func jsonCoder() -> (JSONEncoder, JSONDecoder) {
         let encoder = JSONEncoder()
-        encoder.dateEncodingStrategy = .iso8601
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .iso8601
-        return (encoder, decoder)
+        encoder.outputFormatting = [.sortedKeys]
+        return (encoder, JSONDecoder())
     }
 
     public func jsonVerisi() throws -> Data {

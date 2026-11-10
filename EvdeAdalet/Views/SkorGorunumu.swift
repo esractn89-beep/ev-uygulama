@@ -1,5 +1,5 @@
 import SwiftUI
-import BebekPuanCore
+import EvdeAdaletCore
 
 struct SkorGorunumu: View {
     @Environment(AileStore.self) private var store
@@ -58,6 +58,7 @@ struct SkorGorunumu: View {
                 }
                 .font(.callout)
             }
+            .refreshable { await store.senkron?.simdiEsitle() }
             .navigationTitle("Skor Tablosu")
         }
     }

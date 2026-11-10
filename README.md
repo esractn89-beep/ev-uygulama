@@ -1,4 +1,4 @@
-# Bebek Puan 👶 — Aile İş Paylaşımı (iOS)
+# Evde Adalet ⚖️👶 — Aile İş Paylaşımı (iOS)
 
 Yenidoğan bebeğin bakımını anne ve baba arasında **adil ve eğlenceli** paylaştırmak için bir iOS uygulaması.
 Her işin (bez değiştirme, uyutma, gece kalkma, banyo…) 1–10 arası bir **zorluk puanı** var. Bir işi yapan ebeveyn
@@ -11,9 +11,12 @@ tek dokunuşla kaydeder ve puan kazanır; skor tablosu kimin ne kadar katkı ver
 - **Gece bonusu 🌙** — 00:00–06:00 arası yapılan görevler **×1.5** puan (saat aralığı ayarlardan değiştirilebilir).
 - **Skor tablosu** — Bugün / Bu Hafta / Bu Ay / Tümü; iş paylaşım yüzdesi ve "sıra sende!" mesajı.
 - **Geçmiş** — Günlere göre gruplanmış kayıtlar; kaydırarak silme.
-- **Ayarlar** — Ebeveyn adları ve emojileri, bebeğin adı, görev zorluklarını değiştirme, yeni görev ekleme.
+- **Ayarlar** — Ebeveyn adları ve emojileri, bebeğin adı, görev zorluklarını değiştirme, yeni görev ekleme, "Bu telefon kimin?".
+- **İki telefon arasında eşitleme ☁️** — Ayarlar > *Eşimi davet et* ile iCloud daveti gönderilir. Eş daveti kabul edince
+  iki telefon aynı görevleri ve skor tablosunu görür; eşin telefonundaki önceki kayıtlar da kaybolmadan birleştirilir.
 - Zorluğu sonradan değiştirmek geçmişte kazanılan puanları **etkilemez** (puan kayıt anında saklanır).
-- Veriler cihazda JSON olarak saklanır (`Documents/aile-durumu.json`), şifreli dosya korumasıyla.
+- Veriler cihazda JSON olarak saklanır (`Documents/aile-durumu.json`) ve iCloud'a (CloudKit) eşitlenir. İnternet yokken
+  de çalışır; bağlantı gelince değişiklikler gönderilir.
 
 ### Varsayılan zorluk puanları
 
@@ -41,11 +44,12 @@ tek dokunuşla kaydeder ve puan kazanır; skor tablosu kimin ne kadar katkı ver
 ## Proje yapısı
 
 ```
-Package.swift                 # BebekPuanCore Swift paketi (platformdan bağımsız iş mantığı)
-Sources/BebekPuanCore/        # Modeller, puan kuralları, skor tablosu, kalıcı durum
-Tests/BebekPuanCoreTests/     # XCTest birim testleri (Linux ve macOS'ta çalışır)
-BebekPuan/                    # SwiftUI iOS uygulaması (iOS 17+)
+Package.swift                 # EvdeAdaletCore Swift paketi (platformdan bağımsız iş mantığı)
+Sources/EvdeAdaletCore/        # Modeller, puan kuralları, skor tablosu, kalıcı durum
+Tests/EvdeAdaletCoreTests/     # XCTest birim testleri (Linux ve macOS'ta çalışır)
+EvdeAdalet/                    # SwiftUI iOS uygulaması (iOS 17+)
   AileStore.swift             # @Observable durum + JSON kalıcılık
+  Senkron/                    # CloudKit eşitleme (CKSyncEngine) ve eş davet etme (CKShare)
   Views/                      # Görevler, Skor, Geçmiş, Ayarlar ekranları
 project.yml                   # XcodeGen proje tanımı
 ```
@@ -55,11 +59,33 @@ project.yml                   # XcodeGen proje tanımı
 ```bash
 brew install xcodegen
 xcodegen generate
-open BebekPuan.xcodeproj
+open EvdeAdalet.xcodeproj
 ```
 
-Xcode'da bir iPhone simülatörü seçip ▶︎ ile çalıştırın. Gerçek cihaz için *Signing & Capabilities* altından kendi
-Apple ID / takımınızı seçin ve gerekirse `PRODUCT_BUNDLE_IDENTIFIER` değerini değiştirin.
+Xcode'da bir iPhone simülatörü seçip ▶︎ ile çalıştırın.
+
+### iCloud eşitlemesini açmak
+
+iCloud/CloudKit için **ücretli Apple Developer hesabı** gerekir (ücretsiz hesapla uygulama çalışır ama eşitleme çalışmaz).
+
+1. `project.yml` içindeki `com.example.evdeadalet` paket kimliğini ve `iCloud.com.example.evdeadalet` konteyner adını
+   kendinize ait benzersiz değerlerle değiştirin (ör. `com.adiniz.evdeadalet`). Konteyner adını
+   `EvdeAdalet/Senkron/SenkronMotoru.swift` içindeki `konteynerKimligi` değerinde de güncelleyin.
+2. `xcodegen generate` → Xcode'da hedefin *Signing & Capabilities* sekmesinde takımınızı seçin.
+   iCloud (CloudKit) ve Push Notifications yetenekleri `project.yml`'den gelir; konteynerin yanında kırmızı uyarı varsa
+   "+" ile oluşturun.
+3. Uygulamayı **iki gerçek iPhone'a** (farklı Apple ID'ler) yükleyin. Birinde *Ayarlar → Eşimi davet et* ile daveti
+   Mesajlar/WhatsApp üzerinden gönderin, diğeri bağlantıya dokunup kabul etsin.
+4. Her telefonda *Ayarlar → Bu telefon kimin?* seçin; görev kaydederken varsayılan kişi bu olur.
+5. App Store/TestFlight'a çıkmadan önce CloudKit Console'da şemayı *Production*'a aktarın.
+
+### Eşitleme nasıl çalışır?
+
+- Her görev kaydı, görev türü, ebeveyn ve aile ayarı ayrı bir CloudKit kaydıdır; iki telefon aynı anda görev
+  kaydetse de hiçbir kayıt kaybolmaz.
+- Aynı ayar iki telefonda değiştirilirse **son değişiklik kazanır**. Hiç düzenlenmemiş varsayılanlar asla
+  düzenlenmiş değerleri ezmez; "Anne" ve "Baba" her cihazda aynı kimliği taşıdığı için çoğalmaz.
+- Birleştirme mantığı `Sources/EvdeAdaletCore/Senkron.swift` içindedir ve `swift test` ile test edilir.
 
 ## Testler
 

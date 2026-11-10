@@ -17,5 +17,5 @@ struct AnaGorunum: View {
 
 #Preview {
     AnaGorunum()
-        .environment(AileStore(dosyaURL: FileManager.default.temporaryDirectory.appending(path: "onizleme.json")))
+        .environment(AileStore(dosyaURL: FileManager.default.temporaryDirectory.appending(path: "onizleme.json"), senkronEtkin: false))
 }

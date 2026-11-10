@@ -20,7 +20,21 @@ public enum EbeveynRolu: String, Codable, CaseIterable, Identifiable, Sendable {
         case .baba: return "👨"
         }
     }
+
+    /// Her rolün tüm cihazlarda aynı olan kimliği. İki telefon ilk kez eşitlendiğinde
+    /// "Anne" ve "Baba" kayıtlarının çoğalmadan birleşmesini sağlar.
+    public var sabitKimlik: UUID {
+        switch self {
+        case .anne: return UUID(uuidString: "00000000-0000-0000-0000-0000000000A1")!
+        case .baba: return UUID(uuidString: "00000000-0000-0000-0000-0000000000B1")!
+        }
+    }
 }
+
+/// Eşitlemede "son değişiklik kazanır" kuralı için kullanılan zaman.
+/// Varsayılan (hiç düzenlenmemiş) öğeler en eski tarihi taşır; böylece yeni kurulan
+/// bir telefonun varsayılanları diğer telefondaki düzenlemeleri ezmez.
+public let varsayilanGuncellenme = Date(timeIntervalSince1970: 0)
 
 /// İşleri paylaşan ebeveyn (karı / koca).
 public struct Ebeveyn: Codable, Identifiable, Hashable, Sendable {
@@ -28,12 +42,24 @@ public struct Ebeveyn: Codable, Identifiable, Hashable, Sendable {
     public var ad: String
     public var rol: EbeveynRolu
     public var emoji: String
+    public var guncellenme: Date
 
-    public init(id: UUID = UUID(), ad: String, rol: EbeveynRolu, emoji: String? = nil) {
+    public init(
+        id: UUID = UUID(),
+        ad: String,
+        rol: EbeveynRolu,
+        emoji: String? = nil,
+        guncellenme: Date = varsayilanGuncellenme
+    ) {
         self.id = id
         self.ad = ad
         self.rol = rol
         self.emoji = emoji ?? rol.varsayilanEmoji
+        self.guncellenme = guncellenme
+    }
+
+    public static func varsayilan(_ rol: EbeveynRolu) -> Ebeveyn {
+        Ebeveyn(id: rol.sabitKimlik, ad: rol.varsayilanAd, rol: rol)
     }
 }
 
@@ -70,13 +96,22 @@ public struct GorevTuru: Codable, Identifiable, Hashable, Sendable {
     public var zorluk: Int {
         didSet { zorluk = GorevTuru.sinirla(zorluk) }
     }
+    public var guncellenme: Date
 
-    public init(id: String, ad: String, emoji: String, kategori: GorevKategorisi, zorluk: Int) {
+    public init(
+        id: String,
+        ad: String,
+        emoji: String,
+        kategori: GorevKategorisi,
+        zorluk: Int,
+        guncellenme: Date = varsayilanGuncellenme
+    ) {
         self.id = id
         self.ad = ad
         self.emoji = emoji
         self.kategori = kategori
         self.zorluk = GorevTuru.sinirla(zorluk)
+        self.guncellenme = guncellenme
     }
 
     static func sinirla(_ deger: Int) -> Int {
@@ -87,7 +122,7 @@ public struct GorevTuru: Codable, Identifiable, Hashable, Sendable {
 /// Bir ebeveynin bir görevi yaptığına dair kayıt.
 ///
 /// Kazanılan puan kayıt anında saklanır; böylece görevin zorluğu sonradan
-/// değiştirilse bile geçmiş puanlar değişmez.
+/// değiştirilse bile geçmiş puanlar değişmez. Kayıtlar oluşturulduktan sonra değişmez.
 public struct GorevKaydi: Codable, Identifiable, Hashable, Sendable {
     public var id: UUID
     public var gorevID: String
@@ -113,5 +148,22 @@ public struct GorevKaydi: Codable, Identifiable, Hashable, Sendable {
         self.kazanilanPuan = kazanilanPuan
         self.geceBonusu = geceBonusu
         self.not = not
+    }
+}
+
+/// Aile genelindeki ayarlar.
+public struct AileAyarlari: Codable, Hashable, Sendable {
+    public var bebekAdi: String
+    public var kurallar: PuanKurallari
+    public var guncellenme: Date
+
+    public init(
+        bebekAdi: String = "Bebek",
+        kurallar: PuanKurallari = .varsayilan,
+        guncellenme: Date = varsayilanGuncellenme
+    ) {
+        self.bebekAdi = bebekAdi
+        self.kurallar = kurallar
+        self.guncellenme = guncellenme
     }
 }

@@ -1,8 +1,9 @@
 import Foundation
 import Observation
-import BebekPuanCore
+import EvdeAdaletCore
 
-/// Uygulama durumunu tutar ve her değişiklikte cihazdaki JSON dosyasına kaydeder.
+/// Uygulama durumunu tutar, her değişiklikte cihazdaki JSON dosyasına kaydeder
+/// ve değişiklikleri iCloud eşitleme motoruna bildirir.
 @MainActor
 @Observable
 final class AileStore {
@@ -10,15 +11,21 @@ final class AileStore {
     /// Son kaydedilen görev; ekranda kısa "+puan" bildirimi göstermek için.
     var sonKayit: GorevKaydi?
 
+    /// Önizlemelerde ve testlerde `nil`.
+    private(set) var senkron: SenkronMotoru?
+
     private let dosyaURL: URL
 
-    init(dosyaURL: URL? = nil) {
+    init(dosyaURL: URL? = nil, senkronEtkin: Bool = true) {
         let url = dosyaURL ?? URL.documentsDirectory.appending(path: "aile-durumu.json")
         self.dosyaURL = url
         if let veri = try? Data(contentsOf: url), let yuklenen = try? AileDurumu.yukle(veri) {
             durum = yuklenen
         } else {
             durum = AileDurumu()
+        }
+        if senkronEtkin {
+            senkron = SenkronMotoru(store: self)
         }
     }
 
@@ -46,26 +53,45 @@ final class AileStore {
         degistir { $0.gorevSil(id: gorev.id) }
     }
 
-    func ebeveynGuncelle(_ ebeveyn: Ebeveyn) {
-        degistir { durum in
-            guard let index = durum.ebeveynler.firstIndex(where: { $0.id == ebeveyn.id }) else { return }
-            durum.ebeveynler[index] = ebeveyn
-        }
+    func ebeveynGuncelle(_ ebeveyn: Ebeveyn, ad: String? = nil, emoji: String? = nil) {
+        degistir { $0.ebeveynGuncelle(id: ebeveyn.id, ad: ad, emoji: emoji) }
     }
 
     func bebekAdiGuncelle(_ ad: String) {
-        degistir { $0.bebekAdi = ad }
+        degistir { durum in durum.ayarlariGuncelle { $0.bebekAdi = ad } }
     }
 
     func geceAraligiGuncelle(baslangic: Int, bitis: Int) {
         degistir { durum in
-            durum.kurallar.geceBaslangicSaati = baslangic
-            durum.kurallar.geceBitisSaati = bitis
+            durum.ayarlariGuncelle {
+                $0.kurallar.geceBaslangicSaati = baslangic
+                $0.kurallar.geceBitisSaati = bitis
+            }
         }
     }
 
     func tumKayitlariSifirla() {
-        degistir { $0.kayitlar.removeAll() }
+        degistir { $0.tumKayitlariSil() }
+    }
+
+    // MARK: - Eşitleme
+
+    /// iCloud'dan gelen değişiklikleri uygular (buluta geri bildirilmez).
+    func uzaktanUygula(degisenler: [SenkronOgesi], silinenler: [String]) {
+        var yeni = durum
+        for oge in degisenler {
+            do {
+                try yeni.uzaktanUygula(oge)
+            } catch {
+                print("Eşitleme: \(oge.ad) çözülemedi: \(error)")
+            }
+        }
+        for ad in silinenler {
+            yeni.uzaktanSil(ad: ad)
+        }
+        guard yeni != durum else { return }
+        durum = yeni
+        diskeYaz()
     }
 
     // MARK: - Yardımcılar
@@ -74,13 +100,17 @@ final class AileStore {
     func ebeveyn(id: UUID) -> Ebeveyn? { durum.ebeveyn(id: id) }
 
     private func degistir(_ islem: (inout AileDurumu) -> Void) {
+        let onceki = durum
         islem(&durum)
-        kaydet()
+        guard durum != onceki else { return }
+        diskeYaz()
+        let fark = AileDurumu.farklar(onceki: onceki, sonraki: durum)
+        senkron?.yerelDegisiklikler(kaydedilecek: fark.kaydedilecek, silinecek: fark.silinecek)
     }
 
-    private func kaydet() {
+    private func diskeYaz() {
         do {
-            try durum.jsonVerisi().write(to: dosyaURL, options: [.atomic, .completeFileProtection])
+            try durum.jsonVerisi().write(to: dosyaURL, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
         } catch {
             print("Kaydetme hatası: \(error)")
         }

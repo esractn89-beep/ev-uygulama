@@ -1,16 +1,20 @@
 import SwiftUI
-import BebekPuanCore
+import EvdeAdaletCore
 
 /// Ana ekran: kimin yaptığını seç, görevin kartına dokun, puanı kazan.
 struct BugunGorunumu: View {
     @Environment(AileStore.self) private var store
     @State private var seciliEbeveynID: UUID?
+    /// Bu telefonu kullanan ebeveyn (Ayarlar'dan seçilir); seçim varsayılan olarak bu kişidir.
+    @AppStorage("benimRolum") private var benimRolum: EbeveynRolu = .anne
     @State private var bildirimGorunur = false
 
     private let sutunlar = [GridItem(.adaptive(minimum: 150), spacing: 12)]
 
     private var seciliEbeveyn: Ebeveyn? {
-        store.durum.ebeveynler.first { $0.id == seciliEbeveynID } ?? store.durum.ebeveynler.first
+        store.durum.ebeveynler.first { $0.id == seciliEbeveynID }
+            ?? store.durum.ebeveynler.first { $0.rol == benimRolum }
+            ?? store.durum.ebeveynler.first
     }
 
     var body: some View {
@@ -36,6 +40,7 @@ struct BugunGorunumu: View {
                 }
                 .padding()
             }
+            .refreshable { await store.senkron?.simdiEsitle() }
             .navigationTitle("\(store.durum.bebekAdi) için 👶")
             .overlay(alignment: .top) { puanBildirimi }
             .sensoryFeedback(.success, trigger: store.sonKayit?.id)

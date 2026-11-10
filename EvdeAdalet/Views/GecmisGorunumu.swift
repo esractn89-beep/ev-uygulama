@@ -1,5 +1,5 @@
 import SwiftUI
-import BebekPuanCore
+import EvdeAdaletCore
 
 struct GecmisGorunumu: View {
     @Environment(AileStore.self) private var store
@@ -38,6 +38,7 @@ struct GecmisGorunumu: View {
                     }
                 }
             }
+            .refreshable { await store.senkron?.simdiEsitle() }
             .navigationTitle("Geçmiş")
         }
     }

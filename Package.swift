@@ -4,13 +4,13 @@ import PackageDescription
 // Uygulamanın platformdan bağımsız çekirdeği (modeller, puanlama, skor tablosu).
 // Linux'ta da derlenip test edilebilir: `swift test`
 let package = Package(
-    name: "BebekPuanCore",
+    name: "EvdeAdaletCore",
     platforms: [.iOS(.v17), .macOS(.v14)],
     products: [
-        .library(name: "BebekPuanCore", targets: ["BebekPuanCore"])
+        .library(name: "EvdeAdaletCore", targets: ["EvdeAdaletCore"])
     ],
     targets: [
-        .target(name: "BebekPuanCore"),
-        .testTarget(name: "BebekPuanCoreTests", dependencies: ["BebekPuanCore"])
+        .target(name: "EvdeAdaletCore"),
+        .testTarget(name: "EvdeAdaletCoreTests", dependencies: ["EvdeAdaletCore"])
     ]
 )

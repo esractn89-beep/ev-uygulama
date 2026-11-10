@@ -1,10 +1,11 @@
 import SwiftUI
-import BebekPuanCore
+import EvdeAdaletCore
 
 struct AyarlarGorunumu: View {
     @Environment(AileStore.self) private var store
     @State private var yeniGorevGorunur = false
     @State private var sifirlaOnayi = false
+    @AppStorage("benimRolum") private var benimRolum: EbeveynRolu = .anne
 
     var body: some View {
         NavigationStack {
@@ -18,15 +19,24 @@ struct AyarlarGorunumu: View {
                         HStack {
                             TextField("Emoji", text: Binding(
                                 get: { ebeveyn.emoji },
-                                set: { var e = ebeveyn; e.emoji = String($0.prefix(2)); store.ebeveynGuncelle(e) }
+                                set: { store.ebeveynGuncelle(ebeveyn, emoji: String($0.prefix(2))) }
                             ))
                             .frame(width: 44)
                             TextField(ebeveyn.rol.varsayilanAd, text: Binding(
                                 get: { ebeveyn.ad },
-                                set: { var e = ebeveyn; e.ad = $0; store.ebeveynGuncelle(e) }
+                                set: { store.ebeveynGuncelle(ebeveyn, ad: $0) }
                             ))
                         }
                     }
+                    Picker("Bu telefon kimin?", selection: $benimRolum) {
+                        ForEach(store.durum.ebeveynler) { ebeveyn in
+                            Text("\(ebeveyn.emoji) \(ebeveyn.ad)").tag(ebeveyn.rol)
+                        }
+                    }
+                }
+
+                if let senkron = store.senkron {
+                    AilePaylasimiBolumu(senkron: senkron)
                 }
 
                 Section {

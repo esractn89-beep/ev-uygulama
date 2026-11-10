@@ -1,7 +1,7 @@
 import XCTest
-@testable import BebekPuanCore
+@testable import EvdeAdaletCore
 
-final class BebekPuanCoreTests: XCTestCase {
+final class EvdeAdaletCoreTests: XCTestCase {
     private var takvim: Calendar = {
         var takvim = Calendar(identifier: .gregorian)
         takvim.timeZone = TimeZone(identifier: "Europe/Istanbul")!
@@ -119,7 +119,7 @@ final class BebekPuanCoreTests: XCTestCase {
     }
 
     func testJSONGidisDonus() throws {
-        var durum = AileDurumu(bebekAdi: "Deniz")
+        var durum = AileDurumu(ayarlar: AileAyarlari(bebekAdi: "Deniz"))
         try durum.kaydet(gorevID: "uyutma", ebeveynID: durum.ebeveynler[0].id, tarih: tarih(10, 21), not: "Ninni ile", takvim: takvim)
         let geri = try AileDurumu.yukle(durum.jsonVerisi())
         XCTAssertEqual(geri, durum)
