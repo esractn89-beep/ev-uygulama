@@ -15,7 +15,9 @@ import EvdeAdaletCore
 @MainActor
 @Observable
 final class SenkronMotoru {
-    static let konteynerKimligi = "iCloud.com.example.evdeadalet"
+    /// `iCloud.<paket kimliği>`; project.yml'deki Info.plist ayarından okunur.
+    static let konteynerKimligi = Bundle.main.object(forInfoDictionaryKey: "CloudKitKonteyneri") as? String
+        ?? "iCloud.\(Bundle.main.bundleIdentifier ?? "com.example.evdeadalet")"
     static let bolgeAdi = "Aile"
     static let veriAlani = "veri"
 

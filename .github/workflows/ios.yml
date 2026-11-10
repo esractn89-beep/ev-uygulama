@@ -1,0 +1,141 @@
+# Evde Adalet — Mac olmadan iOS derleme ve TestFlight'a yükleme.
+#
+# - Her push'ta: bulut Mac'te çekirdek testleri çalıştırır ve uygulamayı (imzasız) derler.
+# - Elle çalıştırıp "testflight" kutusunu işaretleyince: imzalayıp App Store Connect'e yükler;
+#   birkaç dakika sonra iPhone'daki TestFlight uygulamasında görünür.
+#
+# TestFlight için gereken GitHub ayarları (Settings → Secrets and variables → Actions):
+#   Variables: APPLE_TEAM_ID, BUNDLE_ID
+#   Secrets:   ASC_KEY_ID, ASC_ISSUER_ID, ASC_PRIVATE_KEY
+name: iOS
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      testflight:
+        description: "TestFlight'a yükle"
+        type: boolean
+        default: true
+
+concurrency:
+  group: ios-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: true
+
+jobs:
+  derle:
+    name: Test ve derleme
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Araçlar
+        run: |
+          brew list xcodegen >/dev/null 2>&1 || brew install xcodegen
+          xcodebuild -version
+
+      - name: Çekirdek testleri
+        run: swift test
+
+      - name: Xcode projesini oluştur
+        run: xcodegen generate
+
+      - name: Uygulamayı derle (simülatör, imzasız)
+        run: |
+          mkdir -p build
+          xcodebuild build \
+            -project EvdeAdalet.xcodeproj \
+            -scheme EvdeAdalet \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath build/DerivedData \
+            CODE_SIGNING_ALLOWED=NO \
+            | tee build/xcodebuild.log | grep -E "error:|warning:|BUILD (SUCCEEDED|FAILED)" || true
+          grep -q "BUILD SUCCEEDED" build/xcodebuild.log
+
+  testflight:
+    name: TestFlight'a yükle
+    needs: derle
+    if: github.event_name == 'workflow_dispatch' && inputs.testflight
+    runs-on: macos-15
+    timeout-minutes: 45
+    env:
+      TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
+      BUNDLE_ID: ${{ vars.BUNDLE_ID }}
+      ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+      ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Ayarları denetle
+        env:
+          ANAHTAR_VAR: ${{ secrets.ASC_PRIVATE_KEY != '' }}
+        run: |
+          eksik=""
+          for ad in TEAM_ID BUNDLE_ID ASC_KEY_ID ASC_ISSUER_ID; do
+            [ -n "${!ad}" ] || eksik="$eksik $ad"
+          done
+          [ "$ANAHTAR_VAR" = "true" ] || eksik="$eksik ASC_PRIVATE_KEY"
+          if [ -n "$eksik" ]; then
+            echo "::error::Eksik GitHub ayarları:$eksik (README'deki 'Mac olmadan' bölümüne bakın)"
+            exit 1
+          fi
+
+      - name: App Store Connect API anahtarı
+        env:
+          ASC_PRIVATE_KEY: ${{ secrets.ASC_PRIVATE_KEY }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/keys"
+          printf '%s\n' "$ASC_PRIVATE_KEY" > "$RUNNER_TEMP/keys/AuthKey_${ASC_KEY_ID}.p8"
+          echo "ASC_KEY_PATH=$RUNNER_TEMP/keys/AuthKey_${ASC_KEY_ID}.p8" >> "$GITHUB_ENV"
+
+      - name: Projeyi hazırla
+        run: |
+          brew list xcodegen >/dev/null 2>&1 || brew install xcodegen
+          sed -i '' \
+            -e "s/com\.example\.evdeadalet/${BUNDLE_ID}/g" \
+            -e "s/DEVELOPMENT_TEAM: \"\"/DEVELOPMENT_TEAM: ${TEAM_ID}/" \
+            -e "s/CURRENT_PROJECT_VERSION: \"1\"/CURRENT_PROJECT_VERSION: \"${{ github.run_number }}\"/" \
+            project.yml
+          xcodegen generate
+
+      - name: Arşivle (imzalı)
+        run: |
+          set -o pipefail
+          xcodebuild archive \
+            -project EvdeAdalet.xcodeproj \
+            -scheme EvdeAdalet \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -archivePath build/EvdeAdalet.xcarchive \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$ASC_KEY_PATH" \
+            -authenticationKeyID "$ASC_KEY_ID" \
+            -authenticationKeyIssuerID "$ASC_ISSUER_ID" \
+            | grep -E "error:|warning: .*(sign|provision)|ARCHIVE (SUCCEEDED|FAILED)"
+
+      - name: App Store Connect'e yükle
+        run: |
+          cat > build/ExportOptions.plist <<EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>method</key><string>app-store-connect</string>
+            <key>destination</key><string>upload</string>
+            <key>signingStyle</key><string>automatic</string>
+            <key>teamID</key><string>${TEAM_ID}</string>
+            <key>manageAppVersionAndBuildNumber</key><false/>
+          </dict>
+          </plist>
+          EOF
+          xcodebuild -exportArchive \
+            -archivePath build/EvdeAdalet.xcarchive \
+            -exportOptionsPlist build/ExportOptions.plist \
+            -exportPath build/export \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$ASC_KEY_PATH" \
+            -authenticationKeyID "$ASC_KEY_ID" \
+            -authenticationKeyIssuerID "$ASC_ISSUER_ID"
+          echo "### ✅ Yüklendi — derleme no ${{ github.run_number }}. Birkaç dakika içinde TestFlight'ta görünür." >> "$GITHUB_STEP_SUMMARY"
